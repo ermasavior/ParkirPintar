@@ -1,0 +1,65 @@
+@startuml Seq-07 Parking Fee Payment
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+skinparam sequenceParticipant underline
+
+actor       "Driver"            as Driver
+participant "Payment Gateway"   as PGW
+participant "Payment Service"   as Payment
+participant "Billing Service"   as Billing
+participant "Notification Svc"  as Notification
+participant "NATS JetStream"    as NATS
+database    "PostgreSQL"        as DB
+
+Driver -> PGW : Scan QR code & pay via banking app
+
+alt Payment SUCCESS
+    PGW --> Driver : Payment success
+
+    PGW -> Payment : POST /webhook\n{ payment_id, status=SUCCESS }
+    Payment -> DB : UPDATE payments SET status=SUCCESS
+    DB --> Payment : OK
+    Payment -> NATS : Publish payment.parking.done\n{ invoice_id, status=SUCCESS }
+    Payment --> PGW : 200 OK
+
+    NATS -> Billing : Consume payment.parking.done
+    Billing -> DB : UPDATE invoices SET status=PAID\nWHERE id=invoice_id
+    DB --> Billing : OK
+
+    NATS -> Notification : Consume payment.parking.done (SUCCESS)
+    Notification --> Driver : Push: "Payment received.\nThank you for parking!"
+
+else Payment FAILED (gateway rejects payment)
+    PGW --> Driver : Payment failed
+
+    PGW -> Payment : POST /webhook\n{ payment_id, status=FAILED }
+    Payment -> DB : UPDATE payments SET status=FAILED
+    DB --> Payment : OK
+    Payment -> NATS : Publish payment.parking.done\n{ invoice_id, status=FAILED }
+    Payment --> PGW : 200 OK
+
+    NATS -> Billing : Consume payment.parking.done
+    Billing -> DB : UPDATE invoices SET status=PAYMENT_FAILED\nWHERE id=invoice_id
+    DB --> Billing : OK
+
+    NATS -> Notification : Consume payment.parking.done (FAILED)
+    Notification --> Driver : Push: "Parking payment failed.\nPlease retry payment."
+
+else Payment EXPIRED (QRIS code not scanned within gateway TTL)
+    PGW -> Payment : POST /webhook\n{ payment_id, status=EXPIRED }
+    Payment -> DB : UPDATE payments SET status=EXPIRED
+    DB --> Payment : OK
+    Payment -> NATS : Publish payment.parking.done\n{ invoice_id, status=EXPIRED }
+    Payment --> PGW : 200 OK
+
+    NATS -> Billing : Consume payment.parking.done
+    Billing -> DB : UPDATE invoices SET status=PAYMENT_FAILED\nWHERE id=invoice_id
+    DB --> Billing : OK
+
+    NATS -> Notification : Consume payment.parking.done (EXPIRED)
+    Notification --> Driver : Push: "Payment QR expired.\nPlease request a new code and retry."
+
+end
+
+@enduml

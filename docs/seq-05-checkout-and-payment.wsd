@@ -1,0 +1,52 @@
+@startuml Seq-05 Check Out
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+skinparam sequenceParticipant underline
+
+actor       "Driver"            as Driver
+participant "API Gateway"       as GW
+participant "Presence Service"  as Presence
+participant "Billing Service"   as Billing
+participant "Payment Service"   as Payment
+participant "Payment Gateway"   as PGW
+database    "PostgreSQL"        as DB
+
+note over Driver : Driver finishes parking\nand taps "Check Out" in app
+
+Driver -> GW : POST /sessions/checkout\n{ session_id, driver_id }
+GW -> Presence : CheckOut(session_id, driver_id)
+
+Presence -> DB : SELECT * FROM sessions WHERE id=session_id
+DB --> Presence : session (ACTIVE, checked_in_at)
+
+Presence -> DB : UPDATE sessions\nSET status=COMPLETED,\n    checked_out_at=now()
+DB --> Presence : OK
+
+Presence -> DB : UPDATE spots SET status=AVAILABLE\nWHERE id=spot_id
+DB --> Presence : OK (spot released immediately)
+
+Presence -> DB : UPDATE reservations\nSET status=COMPLETED
+DB --> Presence : OK
+
+Presence -> Billing : CalculateAndCreateInvoice(\n  idempotency_key, session_id,\n  checked_in_at, checked_out_at)
+
+Billing -> Billing : PricingEngine.Calculate()\n→ hours=ceil(duration/60)\n→ parking_fee=hours×5000\n→ overnight_fee=20000 if crosses midnight
+
+Billing -> DB : INSERT INTO invoices\n(status=PENDING_PAYMENT,\n parking_fee, overnight_fee, total, ...)
+DB --> Billing : invoice_id
+
+Billing -> Payment : CreatePayment(\n  idempotency_key,\n  reference_id=invoice_id,\n  type=PARKING_FEE,\n  amount=parking_fee+overnight_fee)
+Payment -> DB : INSERT INTO payments\n(status=PENDING, ...)
+DB --> Payment : payment_id
+Payment -> PGW : Create QRIS payment
+PGW --> Payment : qr_code_url
+Payment --> Billing : { payment_id, qr_code_url }
+
+Billing --> Presence : CreateInvoiceResponse\n{ invoice_id, total_idr, qr_code_url }
+Presence --> GW : CheckOutResponse\n{ session_id, invoice_id,\n  total_idr, qr_code_url }
+GW --> Driver : 200 OK { invoice_id, total_idr, qr_code_url }
+
+note over Driver : Driver scans QRIS and pays.\nSee Seq-07 for payment outcome.
+
+@enduml

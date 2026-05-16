@@ -1,0 +1,73 @@
+@startuml Seq-02 Reserve a Spot
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+skinparam sequenceParticipant underline
+
+actor       "Driver"            as Driver
+participant "API Gateway"       as GW
+participant "Reservation Svc"   as Reservation
+participant "Payment Service"   as Payment
+participant "Payment Gateway"   as PGW
+database    "PostgreSQL"        as DB
+database    "Redis"             as Redis
+
+== Common: Idempotency & Validation ==
+
+Driver -> GW : POST /reservations\n{ idempotency_key, vehicle_type, mode, [spot_id] }
+GW -> Reservation : CreateReservation(request)
+
+Reservation -> DB : SELECT r.*, r.qr_code_url, s.spot_code, s.floor_number\nFROM reservations r JOIN spots s ON s.id = r.spot_id\nWHERE r.idempotency_key=$1
+
+alt idempotency_key already exists (duplicate request)
+    DB --> Reservation : existing reservation row (with spot_code, floor_number, qr_code_url)
+    Reservation --> GW : CreateReservationResponse\n{ reservation_id, spot_id, spot_code,\n  floor_number, status, qr_code_url }
+    GW --> Driver : 200 OK { reservation_id, qr_code_url }\n(replayed — no side effects)
+else new request
+    DB --> Reservation : not found (new request)
+
+Reservation -> DB : Validate driver has no active reservation\n(status IN PENDING_PAYMENT, CONFIRMED)
+DB --> Reservation : no active reservation
+
+end
+
+== User-Selected Mode (mode=USER_SELECTED) ==
+
+alt mode = USER_SELECTED
+    Reservation -> Redis : SETNX lock:spot:{spot_id} driver_id EX 30
+    Redis --> Reservation : OK (lock acquired)
+
+    Reservation -> DB : SELECT status FROM spots\nWHERE id=spot_id FOR UPDATE
+    DB --> Reservation : status=AVAILABLE
+
+else mode = SYSTEM_ASSIGNED
+    Reservation -> DB : SELECT id FROM spots\nWHERE status=AVAILABLE\nAND vehicle_type=$1\nLIMIT 1 FOR UPDATE
+    DB --> Reservation : spot_id (first available spot)
+
+    Reservation -> Redis : SETNX lock:spot:{spot_id} driver_id EX 30
+    Redis --> Reservation : OK (lock acquired)
+end
+
+== Common: Write Reservation & Release Lock ==
+
+Reservation -> DB : BEGIN TRANSACTION\n  INSERT INTO reservations\n    (status=PENDING_PAYMENT, spot_id, qr_code_url, ...)\n  UPDATE spots SET status=LOCKED\n    WHERE id=spot_id\nCOMMIT
+DB --> Reservation : reservation_id
+
+Reservation -> Redis : DEL lock:spot:{spot_id}
+Redis --> Reservation : OK (lock released — spot protected by DB status)
+
+== Common: Create Payment ==
+
+Reservation -> Payment : CreatePayment(\n  idempotency_key,\n  reference_id=reservation_id,\n  type=BOOKING_FEE,\n  amount=5000)
+Payment -> DB : INSERT INTO payments\n(status=PENDING, ...)
+DB --> Payment : payment_id
+Payment -> PGW : Create QRIS payment (5,000 IDR)
+PGW --> Payment : qr_code_url
+Payment --> Reservation : { payment_id, qr_code_url }
+
+Reservation --> GW : CreateReservationResponse\n{ reservation_id, spot_id, spot_code,\n  floor_number, status=PENDING_PAYMENT,\n  qr_code_url }
+GW --> Driver : 200 OK { reservation_id, qr_code_url }
+
+note over Driver : Driver scans QR code and pays.\nSee Seq-03 for booking payment outcome.
+
+@enduml

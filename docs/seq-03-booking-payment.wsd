@@ -1,0 +1,73 @@
+@startuml Seq-03 Booking Fee Payment
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+skinparam sequenceParticipant underline
+
+actor       "Driver"            as Driver
+participant "Payment Gateway"   as PGW
+participant "Payment Service"   as Payment
+participant "Reservation Svc"   as Reservation
+participant "Notification Svc"  as Notification
+participant "NATS JetStream"    as NATS
+database    "PostgreSQL"        as DB
+
+Driver -> PGW : Scan QR code & pay via banking app
+
+alt Payment SUCCESS
+    PGW --> Driver : Payment success
+
+    PGW -> Payment : POST /webhook\n{ payment_id, status=SUCCESS }
+    Payment -> DB : UPDATE payments SET status=SUCCESS\nWHERE id=payment_id
+    DB --> Payment : OK
+    Payment -> NATS : Publish payment.booking.done\n{ reservation_id, status=SUCCESS }
+    Payment --> PGW : 200 OK
+
+    NATS -> Reservation : Consume payment.booking.done
+    Reservation -> DB : UPDATE reservations\nSET status=CONFIRMED,\n    confirmed_at=now(),\n    expires_at=now()+1h\nWHERE id=reservation_id
+    DB --> Reservation : OK
+    Reservation -> NATS : Publish reservation.confirmed\n{ reservation_id, driver_id }
+
+    NATS -> Notification : Consume reservation.confirmed
+    Notification --> Driver : Push: "Reservation confirmed!\nSpot A3, Floor 2. Valid 1 hour."
+
+    NATS -> Notification : Consume payment.booking.done (SUCCESS)
+    Notification --> Driver : Push: "Booking fee 5,000 IDR paid."
+
+else Payment FAILED (gateway rejects payment)
+    PGW --> Driver : Payment failed
+
+    PGW -> Payment : POST /webhook\n{ payment_id, status=FAILED }
+    Payment -> DB : UPDATE payments SET status=FAILED\nWHERE id=payment_id
+    DB --> Payment : OK
+    Payment -> NATS : Publish payment.booking.done\n{ reservation_id, status=FAILED }
+    Payment --> PGW : 200 OK
+
+    NATS -> Reservation : Consume payment.booking.done
+    Reservation -> DB : UPDATE reservations SET status=CANCELLED\nWHERE id=reservation_id
+    DB --> Reservation : OK
+    Reservation -> DB : UPDATE spots SET status=AVAILABLE\nWHERE id=spot_id
+    DB --> Reservation : OK (spot released back to inventory)
+
+    NATS -> Notification : Consume payment.booking.done (FAILED)
+    Notification --> Driver : Push: "Booking payment failed.\nReservation cancelled. Spot released."
+
+else Payment EXPIRED (QRIS code not scanned within gateway TTL)
+    PGW -> Payment : POST /webhook\n{ payment_id, status=EXPIRED }
+    Payment -> DB : UPDATE payments SET status=EXPIRED\nWHERE id=payment_id
+    DB --> Payment : OK
+    Payment -> NATS : Publish payment.booking.done\n{ reservation_id, status=EXPIRED }
+    Payment --> PGW : 200 OK
+
+    NATS -> Reservation : Consume payment.booking.done
+    Reservation -> DB : UPDATE reservations SET status=CANCELLED\nWHERE id=reservation_id
+    DB --> Reservation : OK
+    Reservation -> DB : UPDATE spots SET status=AVAILABLE\nWHERE id=spot_id
+    DB --> Reservation : OK (spot released back to inventory)
+
+    NATS -> Notification : Consume payment.booking.done (EXPIRED)
+    Notification --> Driver : Push: "Booking payment expired.\nReservation cancelled. Please try again."
+
+end
+
+@enduml

@@ -1,0 +1,77 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:alpine3.20
+    container_name: parkir_postgres
+    command: postgres -c 'max_connections=500'
+    environment:
+      POSTGRES_DB: parkir_pintar
+      POSTGRES_USER: parkir
+      POSTGRES_PASSWORD: parkir
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - local
+
+  redis:
+    image: redis:alpine
+    container_name: parkir_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: always
+    networks:
+      - local
+
+  nats:
+    image: nats:latest
+    container_name: parkir_nats
+    ports:
+      - "4222:4222"   # NATS client connections
+      - "8222:8222"   # NATS monitoring interface
+      - "6222:6222"   # NATS clustering port
+    command: ["-js"]  # Enables JetStream
+    volumes:
+      - nats_data:/data
+    environment:
+      - NATS_MAX_MEMORY=2GB
+      - NATS_MAX_PAYLOAD=64MB
+    restart: always
+    networks:
+      - local
+
+  reservation-service:
+    container_name: parkir_reservation
+    build:
+      context: ./reservation
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    env_file:
+      - ./reservation/.env
+    depends_on:
+      - postgres
+      - redis
+      - nats
+    restart: always
+    networks:
+      - local
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  nats_data:
+    driver: local
+
+networks:
+  local:

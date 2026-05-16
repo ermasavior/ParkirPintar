@@ -1,0 +1,34 @@
+@startuml Seq-01 View Availability and List Spots
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+skinparam sequenceParticipant underline
+
+actor       "Driver"          as Driver
+participant "API Gateway"     as GW
+participant "Search Service"  as Search
+database    "PostgreSQL"      as DB
+
+== View Availability (Summary) ==
+
+Driver -> GW : GET /availability?vehicle_type=CAR
+GW -> Search : GetAvailability(vehicle_type=CAR)
+Search -> DB : SELECT floor_number, COUNT(*)\nFROM spots\nWHERE status=AVAILABLE\nAND vehicle_type=CAR\nGROUP BY floor_number
+DB --> Search : available count per floor
+Search --> GW : GetAvailabilityResponse\n{ total_available=23,\n  floors=[{floor=1, available=5},\n          {floor=2, available=8}, ...] }
+GW --> Driver : 200 OK { total_available, floors[] }
+
+note over Driver : Driver sees "23 car spots available"\nand picks Floor 2 to browse
+
+== List Spots (Spot Picker for User-Selected Mode) ==
+
+Driver -> GW : GET /spots?floor_number=2&vehicle_type=CAR
+GW -> Search : ListSpots(floor_number=2, vehicle_type=CAR)
+Search -> DB : SELECT id, floor_number, spot_code,\n       vehicle_type, status\nFROM spots\nWHERE floor_number=2\nAND vehicle_type=CAR
+DB --> Search : individual spot rows
+Search --> GW : ListSpotsResponse\n{ spots=[{spot_id=12, spot_code=A1, status=AVAILABLE},\n         {spot_id=13, spot_code=A2, status=OCCUPIED},\n         {spot_id=14, spot_code=A3, status=AVAILABLE}, ...] }
+GW --> Driver : 200 OK { spots[] }
+
+note over Driver : Driver sees floor map with spot statuses\nand selects spot A3 (spot_id=14)\n→ proceeds to CreateReservation (USER_SELECTED)
+
+@enduml

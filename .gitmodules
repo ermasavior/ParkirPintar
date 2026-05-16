@@ -1,0 +1,3 @@
+[submodule "reservation"]
+	path = reservation
+	url = https://github.com/ermasavior/ParkirPintar-reservation.git

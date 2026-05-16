@@ -1,0 +1,13 @@
+@startuml State - Sessions
+
+skinparam stateFontSize 13
+skinparam stateArrowFontSize 11
+skinparam roundcorner 8
+
+[*] --> ACTIVE : Driver checks in\n(reservation=CONFIRMED)
+
+ACTIVE --> COMPLETED : Driver checks out
+
+COMPLETED --> [*]
+
+@enduml

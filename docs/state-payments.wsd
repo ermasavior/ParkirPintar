@@ -1,0 +1,17 @@
+@startuml State - Payments
+
+skinparam stateFontSize 13
+skinparam stateArrowFontSize 11
+skinparam roundcorner 8
+
+[*] --> PENDING : CreatePayment called\n(QRIS code generated)
+
+PENDING --> SUCCESS : Payment gateway webhook\n(status=SUCCESS)
+PENDING --> FAILED  : Payment gateway webhook\n(status=FAILED)
+PENDING --> EXPIRED : QRIS code not scanned\nwithin gateway TTL
+
+SUCCESS --> [*]
+FAILED  --> [*]
+EXPIRED --> [*]
+
+@enduml

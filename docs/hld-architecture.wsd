@@ -1,0 +1,74 @@
+@startuml HLD - ParkirPintar Architecture
+
+skinparam rectangleFontSize 12
+skinparam rectangleRoundCorner 8
+skinparam arrowThickness 1.5
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 60
+
+actor "Driver\n(Mobile App)" as Driver
+
+rectangle "API Gateway\n(routing, auth, TLS)" as GW #LightBlue
+
+rectangle "Search Service\n[Go/gRPC]\n- Availability\n- Spot listing" as Search #LightGreen
+
+rectangle "Reservation Service\n[Go/gRPC]\n- Create reservation\n- Spot locking\n- Expiry scheduler" as Reservation #LightGreen
+
+rectangle "Presence Service\n[Go/gRPC]\n- Check-in\n- Check-out\n- Session tracking" as Presence #LightGreen
+
+rectangle "Billing Service\n[Go/gRPC]\n- Pricing engine\n- Invoice generation" as Billing #LightGreen
+
+rectangle "Payment Service\n[Go/gRPC]\n- QRIS payment\n- Webhook handler" as Payment #LightGreen
+
+rectangle "Notification Service\n[Go/NATS]\n- Push notifications" as Notification #LightYellow
+
+database "PostgreSQL\n- spots\n- reservations\n- sessions\n- invoices\n- payments" as DB #LightGray
+
+database "Redis\n- Spot locks\n  (TTL: 30s)" as Redis #LightGray
+
+queue "NATS JetStream\n- reservation.confirmed\n- reservation.expired\n- payment.booking.done\n- payment.parking.done" as NATS #LightGray
+
+rectangle "Payment Gateway\n[External / QRIS]" as PGW #Pink
+
+' Client to Gateway
+Driver --> GW : HTTPS
+
+' Gateway to Services
+GW --> Search       : gRPC
+GW --> Reservation  : gRPC
+GW --> Presence     : gRPC
+GW --> Billing      : gRPC
+
+' Core service-to-service
+Reservation --> Payment : gRPC\n(booking fee)
+Presence    --> Billing : gRPC\n(create invoice)
+Billing     --> Payment : gRPC\n(parking fee)
+
+' DB access
+Search      --> DB : read
+Reservation --> DB : read/write
+Presence    --> DB : read/write
+Billing     --> DB : read/write
+Payment     --> DB : read/write
+
+' Redis locking
+Reservation --> Redis : SETNX/DEL\n(spot lock)
+
+' NATS publish
+Reservation --> NATS : publish
+Payment     --> NATS : publish
+
+' NATS consume
+NATS --> Reservation  : consume\npayment.booking.done
+NATS --> Billing      : consume\npayment.parking.done
+NATS --> Notification : consume\nall events
+
+' Notification to Driver
+Notification --> Driver : Push notification
+
+' Payment gateway
+Payment --> PGW : HTTPS\n(create QRIS)
+PGW     --> Payment : Webhook\n(payment result)
+
+@enduml

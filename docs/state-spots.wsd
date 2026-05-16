@@ -1,0 +1,14 @@
+@startuml State - Spots
+
+skinparam stateFontSize 13
+skinparam stateArrowFontSize 11
+skinparam roundcorner 8
+
+[*] --> AVAILABLE : seeded on system init
+
+AVAILABLE --> LOCKED    : Reservation created\n(PENDING_PAYMENT)
+LOCKED    --> AVAILABLE : Payment failed/expired\nor reservation cancelled
+LOCKED    --> OCCUPIED  : Driver checks in\n(session ACTIVE)
+OCCUPIED  --> AVAILABLE : Driver checks out\n(session COMPLETED)
+
+@enduml

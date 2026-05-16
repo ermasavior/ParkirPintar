@@ -1,0 +1,79 @@
+@startuml ParkirPintar DB Schema
+
+' hide the spot
+' hide circle
+' avoid problems with angled crows feet
+skinparam linetype ortho
+
+entity "spots" as e01 {
+  *id : number <<generated>>
+  --
+  *floor_number : int
+  *spot_code : varchar(10)
+  *vehicle_type : int
+  *status : int
+}
+
+entity "reservations" as e02 {
+  *id : number <<generated>>
+  --
+  *idempotency_key : uuid <<unique>>
+  *spot_id : number <<FK>>
+  *driver_id : uuid
+  *vehicle_type : int
+  *assignment_mode : int
+  *status : int
+  *qr_code_url : text
+  confirmed_at : timestamp
+  expires_at : timestamp
+  created_at : timestamp
+}
+
+entity "sessions" as e03 {
+  *id : number <<generated>>
+  --
+  *reservation_id : number <<FK>>
+  *spot_id : number <<FK>>
+  *driver_id : uuid
+  *status : int
+  *checked_in_at : timestamp
+  checked_out_at : timestamp
+}
+
+entity "invoices" as e04 {
+  *id : number <<generated>>
+  --
+  *idempotency_key : uuid <<unique>>
+  *session_id : number <<FK>>
+  *reservation_id : number <<FK>>
+  *status : int
+  *booking_fee_idr : bigint
+  *parking_fee_idr : bigint
+  *overnight_fee_idr : bigint
+  *total_idr : bigint
+  created_at : timestamp
+}
+
+entity "payments" as e05 {
+  *id : number <<generated>>
+  --
+  *idempotency_key : uuid <<unique>>
+  *reference_id : number
+  *payment_type : int
+  *amount_idr : bigint
+  *method : int
+  *status : int
+  gateway_ref : varchar(255)
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+e01 |o..o{ e02
+e01 |o..o{ e03
+e02 |o..o| e03
+e03 |o..o| e04
+e02 |o..o{ e04
+e02 |o..o{ e05
+e04 |o..o{ e05
+
+@enduml

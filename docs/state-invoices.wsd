@@ -1,0 +1,15 @@
+@startuml State - Invoices
+
+skinparam stateFontSize 13
+skinparam stateArrowFontSize 11
+skinparam roundcorner 8
+
+[*] --> PENDING_PAYMENT : Created on check-out\n(BillingService)
+
+PENDING_PAYMENT --> PAID           : payment.parking.done\n(status=SUCCESS)
+PENDING_PAYMENT --> PAYMENT_FAILED : payment.parking.done\n(status=FAILED/EXPIRED)
+
+PAID           --> [*]
+PAYMENT_FAILED --> [*]
+
+@enduml

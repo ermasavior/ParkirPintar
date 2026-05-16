@@ -1,0 +1,32 @@
+@startuml Seq-06 Reservation Expiry (No-Show)
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+skinparam sequenceParticipant underline
+
+participant "Expiry Scheduler\n(Reservation Svc)" as Scheduler
+participant "Notification Svc"                    as Notification
+participant "NATS JetStream"                      as NATS
+database    "PostgreSQL"                          as DB
+actor       "Driver"                              as Driver
+
+loop every 30 seconds
+    Scheduler -> DB : SELECT id, spot_id\nFROM reservations\nWHERE status=CONFIRMED\nAND expires_at < now()
+    DB --> Scheduler : expired reservations (if any)
+
+    alt no expired reservations
+        Scheduler -> Scheduler : sleep until next tick
+    else expired reservations found
+        loop for each expired reservation
+            Scheduler -> DB : BEGIN TRANSACTION\nUPDATE reservations\n  SET status=EXPIRED\n  WHERE id=$1\nUPDATE spots\n  SET status=AVAILABLE\n  WHERE id=$2\nCOMMIT
+            DB --> Scheduler : OK (spot released)
+
+            Scheduler -> NATS : Publish reservation.expired\n{ reservation_id, driver_id }
+        end
+
+        NATS -> Notification : Consume reservation.expired
+        Notification --> Driver : Push: "Your reservation has expired.\nThe spot has been released."
+    end
+end
+
+@enduml

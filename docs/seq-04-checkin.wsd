@@ -1,0 +1,39 @@
+@startuml Seq-04 Check In
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+skinparam sequenceParticipant underline
+
+actor       "Driver"            as Driver
+participant "API Gateway"       as GW
+participant "Presence Service"  as Presence
+database    "PostgreSQL"        as DB
+
+note over Driver : Driver arrives at parking lot\nand taps "Check In" in app
+
+Driver -> GW : POST /sessions/checkin\n{ reservation_id, driver_id }
+GW -> Presence : CheckIn(reservation_id, driver_id)
+
+Presence -> DB : SELECT status, expires_at\nFROM reservations\nWHERE id=reservation_id
+DB --> Presence : status=CONFIRMED, expires_at
+
+alt reservation expired (expires_at < now())
+    Presence --> GW : 409 Conflict\n{ error: "reservation expired" }
+    GW --> Driver : 409 Conflict — "Reservation expired. Please make a new reservation."
+
+else driver_id does not match reservation
+    Presence --> GW : 403 Forbidden\n{ error: "reservation does not belong to driver" }
+    GW --> Driver : 403 Forbidden
+
+else reservation confirmed and valid
+    Presence -> DB : INSERT INTO sessions\n(status=ACTIVE,\n checked_in_at=now(), ...)
+    DB --> Presence : session_id
+
+    Presence -> DB : UPDATE reservations\nSET status=CHECKED_IN\nWHERE id=reservation_id
+    DB --> Presence : OK
+
+    Presence --> GW : CheckInResponse\n{ session_id, checked_in_at, status=ACTIVE }
+    GW --> Driver : 200 OK — "Checked in! Session started."
+end
+
+@enduml

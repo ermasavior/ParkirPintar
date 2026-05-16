@@ -1,0 +1,287 @@
+{
+  "info": {
+    "name": "ParkirPintar",
+    "_postman_id": "parkir-pintar-collection",
+    "description": "gRPC API collection for ParkirPintar smart parking backend. All services communicate via gRPC over HTTP/2 through the API Gateway.\n\n**Base URL**: `{{gateway_host}}` (default: `localhost:8080`)\n\n**Auth**: Set `authorization` metadata header with Bearer token on all requests.\n\n**Enums**:\n- VehicleType: `CAR=1`, `MOTORCYCLE=2`\n- AssignmentMode: `SYSTEM_ASSIGNED=1`, `USER_SELECTED=2`\n- SpotStatus: `AVAILABLE=1`, `LOCKED=2`, `OCCUPIED=3`\n- ReservationStatus: `PENDING_PAYMENT=0`, `CONFIRMED=1`, `EXPIRED=2`, `CHECKED_IN=3`, `COMPLETED=4`, `CANCELLED=5`\n- SessionStatus: `ACTIVE=0`, `COMPLETED=1`\n- PaymentType: `BOOKING_FEE=0`, `PARKING_FEE=1`\n- PaymentStatus: `PENDING=0`, `SUCCESS=1`, `FAILED=2`, `EXPIRED=3`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "gateway_host", "value": "localhost:8080", "type": "string" },
+    { "key": "driver_id", "value": "550e8400-e29b-41d4-a716-446655440000", "type": "string" },
+    { "key": "reservation_id", "value": "1", "type": "string" },
+    { "key": "spot_id", "value": "42", "type": "string" },
+    { "key": "session_id", "value": "1", "type": "string" },
+    { "key": "invoice_id", "value": "1", "type": "string" },
+    { "key": "payment_id", "value": "1", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Search Service",
+      "description": "Non-core service. Returns real-time parking availability. Reads directly from PostgreSQL. Failure does not block reservation flow.",
+      "item": [
+        {
+          "name": "GetAvailability",
+          "request": {
+            "url": "{{gateway_host}}/search.v1.SearchService/GetAvailability",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicle_type\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Returns total available spots and per-floor breakdown filtered by vehicle type.\n\n**vehicle_type**: `1=CAR`, `2=MOTORCYCLE`\n\n**Response fields**:\n- `total_available`: total available spots\n- `floors[].floor_number`: floor (1-5)\n- `floors[].available_spots`: count of available spots on that floor\n- `floors[].vehicle_type`: vehicle type for that floor"
+          }
+        },
+        {
+          "name": "ListSpots",
+          "request": {
+            "url": "{{gateway_host}}/search.v1.SearchService/ListSpots",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"floor_number\": 1,\n  \"vehicle_type\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Lists individual spots on a specific floor filtered by vehicle type.\n\n**Spot status**: `AVAILABLE=1`, `LOCKED=2`, `OCCUPIED=3`\n\n**Response fields**:\n- `spots[].spot_id`: spot identifier\n- `spots[].floor_number`: floor number\n- `spots[].spot_code`: human-readable code e.g. `A1`, `B12`\n- `spots[].vehicle_type`: vehicle type\n- `spots[].status`: current spot status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reservation Service",
+      "description": "Core service. Handles reservation creation and retrieval. Uses Redis distributed lock + DB transaction to prevent double-booking. Cancellation is system-driven only (via payment failure webhook) — no driver-initiated cancellation.",
+      "item": [
+        {
+          "name": "CreateReservation — System Assigned",
+          "request": {
+            "url": "{{gateway_host}}/reservation.v1.ReservationService/CreateReservation",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"vehicle_type\": 1,\n  \"mode\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Creates a reservation with system-assigned spot selection.\n\n**mode**: `1=SYSTEM_ASSIGNED` — system picks any available spot matching vehicle_type.\n\n**idempotency_key**: Client-generated UUID. Reuse the same key on retries to avoid duplicate reservations.\n\n**Response**: Returns `PENDING_PAYMENT` status + QRIS code URL for booking fee (IDR 5,000). Reservation becomes `CONFIRMED` after payment webhook is received.\n\n**Note**: Driver must have no active reservation (PENDING_PAYMENT or CONFIRMED) to create a new one."
+          }
+        },
+        {
+          "name": "CreateReservation — User Selected",
+          "request": {
+            "url": "{{gateway_host}}/reservation.v1.ReservationService/CreateReservation",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"vehicle_type\": 1,\n  \"mode\": 2,\n  \"spot_id\": \"{{spot_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Creates a reservation for a specific driver-selected spot.\n\n**mode**: `2=USER_SELECTED` — spot_id is required.\n\n**spot_id**: Must be an AVAILABLE spot. System acquires Redis lock then verifies DB status.\n\n**Conflict**: If spot is already locked/occupied, returns error immediately — no waitlist."
+          }
+        },
+        {
+          "name": "GetReservation",
+          "request": {
+            "url": "{{gateway_host}}/reservation.v1.ReservationService/GetReservation",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reservation_id\": \"{{reservation_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Retrieves reservation details by ID.\n\n**ReservationStatus values**:\n- `PENDING_PAYMENT=0`: awaiting booking fee payment\n- `CONFIRMED=1`: payment received, valid for check-in (expires 1 hour after confirmation)\n- `EXPIRED=2`: not checked in within 1 hour\n- `CHECKED_IN=3`: driver has checked in\n- `COMPLETED=4`: session completed and paid\n- `CANCELLED=5`: booking payment failed — system-driven only"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Presence Service",
+      "description": "Core service. Handles driver check-in and check-out. Creates and manages parking sessions.",
+      "item": [
+        {
+          "name": "CheckIn",
+          "request": {
+            "url": "{{gateway_host}}/presence.v1.PresenceService/CheckIn",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reservation_id\": \"{{reservation_id}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"checked_in_at\": \"2026-05-14T08:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Called by the driver's app when they tap 'Check In' upon arriving at the parking lot.\n\n**Preconditions**:\n- Reservation must be in `CONFIRMED` status\n- Reservation must not be expired (`expires_at > now()`)\n- driver_id must match reservation owner\n\n**checked_in_at**: RFC3339 timestamp. Use current time.\n\n**Response**: Returns session_id with ACTIVE status."
+          }
+        },
+        {
+          "name": "CheckOut",
+          "request": {
+            "url": "{{gateway_host}}/presence.v1.PresenceService/CheckOut",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"checked_out_at\": \"2026-05-14T10:30:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Called by the driver's app when they tap 'Check Out'. driver_id in the payload is validated against the auth token as a safety check.\n\n**Preconditions**:\n- Session must be ACTIVE\n- driver_id must match session owner\n\n**checked_out_at**: RFC3339 timestamp. Use current time.\n\n**Side effects**:\n- Session → COMPLETED, reservation → COMPLETED\n- Spot stays OCCUPIED until parking fee payment confirmed\n- Calls BillingService.CalculateAndCreateInvoice internally\n- Returns invoice_id + QRIS code URL for parking fee payment\n- Exit gate opens only after payment SUCCESS (see RetryPayment for failure handling)\n\n**Pricing**: IDR 5,000/hour (ceil) + IDR 20,000 overnight fee if session crosses midnight."
+          }
+        },
+        {
+          "name": "GetSession",
+          "request": {
+            "url": "{{gateway_host}}/presence.v1.PresenceService/GetSession",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Retrieves parking session details by session ID.\n\n**SessionStatus**: `ACTIVE=0`, `COMPLETED=1`"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Billing Service",
+      "description": "Core service. Implements pricing engine. Called internally by Presence Service on checkout — not typically called directly by clients.",
+      "item": [
+        {
+          "name": "CalculateAndCreateInvoice",
+          "request": {
+            "url": "{{gateway_host}}/billing.v1.BillingService/CalculateAndCreateInvoice",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"session_id\": \"{{session_id}}\",\n  \"reservation_id\": \"{{reservation_id}}\",\n  \"checked_in_at\": \"2026-05-14T08:00:00Z\",\n  \"checked_out_at\": \"2026-05-14T10:30:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Calculates parking fee and creates an invoice. Idempotent — duplicate calls with same idempotency_key return the existing invoice.\n\n**Pricing rules**:\n- `parking_fee = ceil(duration_minutes / 60) * 5000`\n- `overnight_fee = 20000` if session crosses midnight (00:00), else `0`\n- `total = booking_fee(5000) + parking_fee + overnight_fee`\n\n**Example** (08:00 → 10:30 = 3 hours):\n- parking_fee = 3 * 5000 = 15,000\n- overnight_fee = 0\n- total = 5,000 + 15,000 = 20,000 IDR\n\n**Note**: Normally called internally by Presence Service, not directly by clients."
+          }
+        },
+        {
+          "name": "GetInvoice",
+          "request": {
+            "url": "{{gateway_host}}/billing.v1.BillingService/GetInvoice",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoice_id\": \"{{invoice_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Retrieves invoice details by ID.\n\n**InvoiceStatus**: `PENDING_PAYMENT=1`, `PAID=2`, `PAYMENT_FAILED=3`\n\n**Response fields**:\n- `booking_fee_idr`: always 5,000\n- `parking_fee_idr`: calculated from session duration\n- `overnight_fee_idr`: 20,000 if overnight, else 0\n- `total_idr`: sum of all fees"
+          }
+        },
+        {
+          "name": "RetryPayment",
+          "request": {
+            "url": "{{gateway_host}}/billing.v1.BillingService/RetryPayment",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoice_id\": \"{{invoice_id}}\",\n  \"driver_id\": \"{{driver_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Generates a fresh QRIS code for a failed or expired parking fee payment. Called by the driver when the exit gate is still closed after payment failure.\n\n**Preconditions**:\n- Invoice must be in `PAYMENT_FAILED` status\n- driver_id must match invoice owner\n\n**Side effects**:\n- Invoice status reset to `PENDING_PAYMENT`\n- New payment record created (previous FAILED/EXPIRED record preserved for audit)\n- Returns new `qr_code_url`\n\n**Note**: Gate remains closed until the new payment succeeds via webhook."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment Service",
+      "description": "Core service. Integrates with external QRIS payment gateway. CreatePayment is called internally by Reservation and Billing services. HandleCallback is an inbound HTTP webhook from the payment gateway.",
+      "item": [
+        {
+          "name": "CreatePayment",
+          "request": {
+            "url": "{{gateway_host}}/payment.v1.PaymentService/CreatePayment",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"reference_id\": \"{{reservation_id}}\",\n  \"payment_type\": 0,\n  \"amount_idr\": 5000,\n  \"driver_id\": \"{{driver_id}}\",\n  \"method\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Creates a QRIS payment and returns the QR code URL immediately. Payment result is async via webhook.\n\n**payment_type**: `0=BOOKING_FEE` (reservation), `1=PARKING_FEE` (invoice)\n\n**method**: `1=QRIS` (only supported method)\n\n**reference_id**: `reservation_id` for BOOKING_FEE, `invoice_id` for PARKING_FEE\n\n**amount_idr**:\n- Booking fee: always `5000`\n- Parking fee: from invoice `total_idr`\n\n**Response**: Returns `qr_code_url` with status `PENDING`. Final status delivered via NATS after webhook callback.\n\n**Note**: Normally called internally by Reservation and Billing services."
+          }
+        },
+        {
+          "name": "GetPaymentStatus",
+          "request": {
+            "url": "{{gateway_host}}/payment.v1.PaymentService/GetPaymentStatus",
+            "method": "GRPC",
+            "header": [
+              { "key": "authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "content-type", "value": "application/grpc" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_id\": \"{{payment_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Polls payment status by payment ID.\n\n**PaymentStatus**: `PENDING=0`, `SUCCESS=1`, `FAILED=2`, `EXPIRED=3`\n\n**Note**: Prefer listening to NATS events over polling this endpoint in production."
+          }
+        },
+        {
+          "name": "HandleCallback (HTTP Webhook)",
+          "request": {
+            "url": "http://{{payment_service_host}}/webhook/payment/callback",
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" },
+              { "key": "x-webhook-signature", "value": "{{webhook_signature}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gateway_ref\": \"GW-REF-123456\",\n  \"reference_id\": \"{{reservation_id}}\",\n  \"payment_type\": \"BOOKING_FEE\",\n  \"status\": \"SUCCESS\",\n  \"amount_idr\": 5000,\n  \"paid_at\": \"2026-05-14T08:05:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "**Inbound HTTP webhook from external payment gateway** — not a client-facing endpoint.\n\nCalled by the payment gateway after the driver completes QRIS payment.\n\n**On SUCCESS**:\n- `payment_type=BOOKING_FEE` → publishes `payment.booking.done` to NATS → Reservation Service confirms reservation\n- `payment_type=PARKING_FEE` → publishes `payment.parking.done` to NATS → Billing Service marks invoice PAID\n\n**On FAILED/EXPIRED**:\n- Same NATS events published with failure status\n- Reservation Service cancels reservation and releases spot\n\n**Note**: This endpoint is on the Payment Service directly, not through the API Gateway. Signature verification should be implemented."
+          }
+        }
+      ]
+    }
+  ]
+}
