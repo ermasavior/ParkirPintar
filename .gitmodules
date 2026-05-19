@@ -1,6 +1,6 @@
 [submodule "reservation"]
 	path = reservation
-	url = https://github.com/ermasavior/ParkirPintar-reservation.git
+	url = git@github.com:ermasavior/ParkirPintar-reservation.git
 [submodule "billing"]
 	path = billing
 	url = git@github.com:ermasavior/ParkirPintar-billing.git
