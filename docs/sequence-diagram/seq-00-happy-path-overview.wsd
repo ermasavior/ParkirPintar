@@ -1,0 +1,81 @@
+@startuml Seq-00 Happy Path Overview
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+skinparam sequenceParticipant underline
+skinparam noteBorderColor #999999
+skinparam noteBackgroundColor #FFFDE7
+
+actor       "Driver"            as Driver
+participant "API Gateway"       as GW
+participant "Search Service"    as Search
+participant "Reservation Svc"   as Reservation
+participant "Payment Gateway"   as PGW
+participant "Presence Service"  as Presence
+participant "Billing Service"   as Billing
+participant "Notification Svc"  as Notification
+
+== 1. View Availability ==
+
+Driver -> GW : GET /availability?vehicle_type=CAR
+GW -> Search : GetAvailability(vehicle_type)
+Search --> GW : { total_available=23, floors[] }
+GW --> Driver : 200 OK — "23 spots available"
+
+Driver -> GW : GET /spots?floor_number=2&vehicle_type=CAR
+GW -> Search : ListSpots(floor=2, vehicle_type)
+Search --> GW : { spots=[A1=AVAILABLE, A2=LOCKED, A3=AVAILABLE, ...] }
+GW --> Driver : 200 OK — floor map with spot statuses
+
+== 2. Reserve a Spot ==
+
+note over Driver : Driver picks spot A3 (USER_SELECTED)\nor skips browsing (SYSTEM_ASSIGNED)
+
+Driver -> GW : POST /reservations\n{ idempotency_key, driver_id, vehicle_type, mode, [spot_id] }
+GW -> Reservation : CreateReservation(request)
+note over Reservation : Acquire Redis lock → verify spot AVAILABLE\n→ INSERT reservation + UPDATE spot=LOCKED\n→ release lock (single DB transaction)
+Reservation -> PGW : Create QRIS payment (booking fee 5,000 IDR)
+PGW --> Reservation : qr_code_url
+Reservation --> GW : { reservation_id, spot_code, qr_code_url,\n  status=PENDING_PAYMENT }
+GW --> Driver : 200 OK
+
+== 3. Pay Booking Fee ==
+
+Driver -> PGW : Scan QR & pay 5,000 IDR
+PGW --> Reservation : Webhook: payment SUCCESS
+note over Reservation : reservation → CONFIRMED\nexpires_at = now() + 1 hour
+Notification --> Driver : Push: "Reservation confirmed. Booking fee paid."
+
+== 4. Check In ==
+
+note over Driver : Driver arrives at parking lot\nand taps "Check In" in app
+
+Driver -> GW : POST /sessions/checkin\n{ reservation_id, driver_id }
+GW -> Presence : CheckIn(reservation_id, driver_id)
+note over Presence : Validate reservation=CONFIRMED & not expired\n→ CREATE session (status=ACTIVE)\n→ reservation → CHECKED_IN
+Presence --> GW : { session_id, checked_in_at, status=ACTIVE }
+GW --> Driver : 200 OK — session started
+
+== 5. Check Out ==
+
+note over Driver : Driver finishes parking\nand taps "Check Out" in app
+
+Driver -> GW : POST /sessions/checkout\n{ session_id, driver_id }
+GW -> Presence : CheckOut(session_id, driver_id)
+note over Presence : session → COMPLETED\nreservation → COMPLETED\nspot → AVAILABLE immediately
+Presence -> Billing : CalculateAndCreateInvoice(\n  session_id, checked_in_at, checked_out_at)
+note over Billing : parking_fee = ceil(hours) × 5,000\novernight_fee = 20,000 if crosses midnight\ntotal = booking_fee + parking_fee + overnight_fee
+Billing -> PGW : Create QRIS payment (parking fee)
+PGW --> Billing : qr_code_url
+Billing --> Presence : { invoice_id, total_idr, qr_code_url }
+Presence --> GW : { invoice_id, total_idr, qr_code_url }
+GW --> Driver : 200 OK — "Total: 20,000 IDR. Scan to pay."
+
+== 6. Pay Parking Fee ==
+
+Driver -> PGW : Scan QR & pay parking fee
+PGW --> Billing : Webhook: payment SUCCESS
+note over Billing : invoice → PAID
+Notification --> Driver : Push: "Payment received. Thank you for parking!"
+
+@enduml

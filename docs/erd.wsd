@@ -51,6 +51,7 @@ entity "invoices" as e04 {
   *parking_fee_idr : bigint
   *overnight_fee_idr : bigint
   *total_idr : bigint
+  *qr_code_url : text
   created_at : timestamp
 }
 
@@ -64,6 +65,7 @@ entity "payments" as e05 {
   *method : int
   *status : int
   gateway_ref : varchar(255)
+  *qr_code_url : text
   created_at : timestamp
   updated_at : timestamp
 }

@@ -2,11 +2,14 @@
   "info": {
     "name": "ParkirPintar",
     "_postman_id": "parkir-pintar-collection",
-    "description": "gRPC API collection for ParkirPintar smart parking backend. All services communicate via gRPC over HTTP/2 through the API Gateway.\n\n**Base URL**: `{{gateway_host}}` (default: `localhost:8080`)\n\n**Auth**: Set `authorization` metadata header with Bearer token on all requests.\n\n**Enums**:\n- VehicleType: `CAR=1`, `MOTORCYCLE=2`\n- AssignmentMode: `SYSTEM_ASSIGNED=1`, `USER_SELECTED=2`\n- SpotStatus: `AVAILABLE=1`, `LOCKED=2`, `OCCUPIED=3`\n- ReservationStatus: `PENDING_PAYMENT=0`, `CONFIRMED=1`, `EXPIRED=2`, `CHECKED_IN=3`, `COMPLETED=4`, `CANCELLED=5`\n- SessionStatus: `ACTIVE=0`, `COMPLETED=1`\n- PaymentType: `BOOKING_FEE=0`, `PARKING_FEE=1`\n- PaymentStatus: `PENDING=0`, `SUCCESS=1`, `FAILED=2`, `EXPIRED=3`",
+    "description": "gRPC API collection for ParkirPintar smart parking backend. All services communicate via gRPC over HTTP/2 through the API Gateway.\n\n**Base URL**: `{{gateway_host}}` (default: `localhost:8080`)\n\n**Auth**: Set `authorization` metadata header with Bearer token on all requests.\n\n**Enums**:\n- VehicleType: `CAR=1`, `MOTORCYCLE=2`\n- AssignmentMode: `SYSTEM_ASSIGNED=1`, `USER_SELECTED=2`\n- SpotStatus: `AVAILABLE=1`, `LOCKED=2`\n- ReservationStatus: `PENDING_PAYMENT=0`, `CONFIRMED=1`, `EXPIRED=2`, `CHECKED_IN=3`, `COMPLETED=4`, `CANCELLED=5`\n- SessionStatus: `ACTIVE=0`, `COMPLETED=1`\n- PaymentType: `BOOKING_FEE=0`, `PARKING_FEE=1`\n- PaymentStatus: `PENDING=0`, `SUCCESS=1`, `FAILED=2`, `EXPIRED=3`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "gateway_host", "value": "localhost:8080", "type": "string" },
+    { "key": "payment_service_host", "value": "localhost:8087", "type": "string" },
+    { "key": "webhook_secret", "value": "change-me-in-production", "type": "string" },
+    { "key": "webhook_signature", "value": "", "type": "string" },
     { "key": "driver_id", "value": "550e8400-e29b-41d4-a716-446655440000", "type": "string" },
     { "key": "reservation_id", "value": "1", "type": "string" },
     { "key": "spot_id", "value": "42", "type": "string" },
@@ -50,7 +53,7 @@
               "raw": "{\n  \"floor_number\": 1,\n  \"vehicle_type\": 1\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Lists individual spots on a specific floor filtered by vehicle type.\n\n**Spot status**: `AVAILABLE=1`, `LOCKED=2`, `OCCUPIED=3`\n\n**Response fields**:\n- `spots[].spot_id`: spot identifier\n- `spots[].floor_number`: floor number\n- `spots[].spot_code`: human-readable code e.g. `A1`, `B12`\n- `spots[].vehicle_type`: vehicle type\n- `spots[].status`: current spot status"
+            "description": "Lists individual spots on a specific floor filtered by vehicle type.\n\n**Spot status**: `AVAILABLE=1`, `LOCKED=2`\n\n**Response fields**:\n- `spots[].spot_id`: spot identifier\n- `spots[].floor_number`: floor number\n- `spots[].spot_code`: human-readable code e.g. `A1`, `B12`\n- `spots[].vehicle_type`: vehicle type\n- `spots[].status`: current spot status"
           }
         }
       ]
@@ -90,7 +93,7 @@
               "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"vehicle_type\": 1,\n  \"mode\": 2,\n  \"spot_id\": \"{{spot_id}}\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Creates a reservation for a specific driver-selected spot.\n\n**mode**: `2=USER_SELECTED` — spot_id is required.\n\n**spot_id**: Must be an AVAILABLE spot. System acquires Redis lock then verifies DB status.\n\n**Conflict**: If spot is already locked/occupied, returns error immediately — no waitlist."
+            "description": "Creates a reservation for a specific driver-selected spot.\n\n**mode**: `2=USER_SELECTED` — spot_id is required.\n\n**spot_id**: Must be an AVAILABLE spot. System acquires Redis lock then verifies DB status.\n\n**Conflict**: If spot is already locked, returns error immediately — no waitlist."
           }
         },
         {
@@ -147,7 +150,7 @@
               "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"checked_out_at\": \"2026-05-14T10:30:00Z\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Called by the driver's app when they tap 'Check Out'. driver_id in the payload is validated against the auth token as a safety check.\n\n**Preconditions**:\n- Session must be ACTIVE\n- driver_id must match session owner\n\n**checked_out_at**: RFC3339 timestamp. Use current time.\n\n**Side effects**:\n- Session → COMPLETED, reservation → COMPLETED\n- Spot stays OCCUPIED until parking fee payment confirmed\n- Calls BillingService.CalculateAndCreateInvoice internally\n- Returns invoice_id + QRIS code URL for parking fee payment\n- Exit gate opens only after payment SUCCESS (see RetryPayment for failure handling)\n\n**Pricing**: IDR 5,000/hour (ceil) + IDR 20,000 overnight fee if session crosses midnight."
+            "description": "Called by the driver's app when they tap 'Check Out'. driver_id in the payload is validated against the auth token as a safety check.\n\n**Preconditions**:\n- Session must be ACTIVE\n- driver_id must match session owner\n\n**checked_out_at**: RFC3339 timestamp. Use current time.\n\n**Side effects**:\n- Session → COMPLETED, reservation → COMPLETED\n- Spot stays LOCKED until parking fee payment confirmed\n- Calls BillingService.CalculateAndCreateInvoice internally\n- Returns invoice_id + QRIS code URL for parking fee payment\n- Exit gate opens only after payment SUCCESS (see RetryPayment for failure handling)\n\n**Pricing**: IDR 5,000/hour (ceil) + IDR 20,000 overnight fee if session crosses midnight."
           }
         },
         {
@@ -184,7 +187,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"session_id\": \"{{session_id}}\",\n  \"reservation_id\": \"{{reservation_id}}\",\n  \"checked_in_at\": \"2026-05-14T08:00:00Z\",\n  \"checked_out_at\": \"2026-05-14T10:30:00Z\"\n}",
+              "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"session_id\": \"{{session_id}}\",\n  \"reservation_id\": \"{{reservation_id}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"checked_in_at\": \"2026-05-14T08:00:00Z\",\n  \"checked_out_at\": \"2026-05-14T10:30:00Z\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "description": "Calculates parking fee and creates an invoice. Idempotent — duplicate calls with same idempotency_key return the existing invoice.\n\n**Pricing rules**:\n- `parking_fee = ceil(duration_minutes / 60) * 5000`\n- `overnight_fee = 20000` if session crosses midnight (00:00), else `0`\n- `total = booking_fee(5000) + parking_fee + overnight_fee`\n\n**Example** (08:00 → 10:30 = 3 hours):\n- parking_fee = 3 * 5000 = 15,000\n- overnight_fee = 0\n- total = 5,000 + 15,000 = 20,000 IDR\n\n**Note**: Normally called internally by Presence Service, not directly by clients."
@@ -266,6 +269,26 @@
         },
         {
           "name": "HandleCallback (HTTP Webhook)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Compute HMAC-SHA256 signature for X-Webhook-Signature header",
+                  "// Uses the webhook_secret collection variable (default: change-me-in-production)",
+                  "",
+                  "const secret = pm.collectionVariables.get('webhook_secret') || 'change-me-in-production';",
+                  "const body = pm.request.body.raw;",
+                  "",
+                  "const signature = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+                  "",
+                  "pm.collectionVariables.set('webhook_signature', signature);",
+                  "console.log('X-Webhook-Signature:', signature);"
+                ]
+              }
+            }
+          ],
           "request": {
             "url": "http://{{payment_service_host}}/webhook/payment/callback",
             "method": "POST",
@@ -278,7 +301,7 @@
               "raw": "{\n  \"gateway_ref\": \"GW-REF-123456\",\n  \"reference_id\": \"{{reservation_id}}\",\n  \"payment_type\": \"BOOKING_FEE\",\n  \"status\": \"SUCCESS\",\n  \"amount_idr\": 5000,\n  \"paid_at\": \"2026-05-14T08:05:00Z\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "**Inbound HTTP webhook from external payment gateway** — not a client-facing endpoint.\n\nCalled by the payment gateway after the driver completes QRIS payment.\n\n**On SUCCESS**:\n- `payment_type=BOOKING_FEE` → publishes `payment.booking.done` to NATS → Reservation Service confirms reservation\n- `payment_type=PARKING_FEE` → publishes `payment.parking.done` to NATS → Billing Service marks invoice PAID\n\n**On FAILED/EXPIRED**:\n- Same NATS events published with failure status\n- Reservation Service cancels reservation and releases spot\n\n**Note**: This endpoint is on the Payment Service directly, not through the API Gateway. Signature verification should be implemented."
+            "description": "**Inbound HTTP webhook from external payment gateway** — not a client-facing endpoint.\n\nCalled by the payment gateway after the driver completes QRIS payment.\n\n**Pre-request script** automatically computes the HMAC-SHA256 signature from the request body using `webhook_secret` collection variable and sets `webhook_signature`.\n\n**On SUCCESS**:\n- `payment_type=BOOKING_FEE` → publishes `payment.booking.done` to NATS → Reservation Service confirms reservation\n- `payment_type=PARKING_FEE` → publishes `payment.parking.done` to NATS → Billing Service marks invoice PAID\n\n**On FAILED/EXPIRED**:\n- Same NATS events published with failure status\n- Reservation Service cancels reservation and releases spot\n\n**Note**: This endpoint is on the Payment Service directly, not through the API Gateway. Signature verification should be implemented."
           }
         }
       ]

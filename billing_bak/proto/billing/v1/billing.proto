@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package billing.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "parkir-pintar/services/billing/gen/billing/v1;billingv1";
+
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED    = 0;
+  INVOICE_STATUS_PENDING_PAYMENT = 1;
+  INVOICE_STATUS_PAID            = 2;
+  INVOICE_STATUS_PAYMENT_FAILED  = 3;
+}
+
+service BillingService {
+  rpc CalculateAndCreateInvoice (CreateInvoiceRequest)  returns (CreateInvoiceResponse);
+  rpc GetInvoice                (GetInvoiceRequest)     returns (GetInvoiceResponse);
+  rpc RetryPayment              (RetryPaymentRequest)   returns (RetryPaymentResponse);
+}
+
+// ── CalculateAndCreateInvoice ────────────────────────────────────────────────
+
+message CreateInvoiceRequest {
+  string                    idempotency_key  = 1; // UUID
+  string                    session_id       = 2; // UUID
+  string                    reservation_id   = 3; // UUID
+  string                    driver_id        = 4; // UUID
+  google.protobuf.Timestamp checked_in_at    = 5;
+  google.protobuf.Timestamp checked_out_at   = 6;
+}
+
+message CreateInvoiceResponse {
+  string invoice_id        = 1; // UUID
+  int64  booking_fee_idr   = 2; // Always 5000
+  int64  parking_fee_idr   = 3; // Calculated from session duration
+  int64  overnight_fee_idr = 4; // 20000 if crosses midnight, else 0
+  int64  total_idr         = 5;
+  string qr_code_url       = 6; // QRIS code URL for parking fee payment
+}
+
+// ── GetInvoice ───────────────────────────────────────────────────────────────
+
+message GetInvoiceRequest {
+  string invoice_id = 1; // UUID
+}
+
+message GetInvoiceResponse {
+  string        invoice_id        = 1;
+  string        session_id        = 2;
+  string        reservation_id    = 3;
+  InvoiceStatus status            = 4;
+  int64         booking_fee_idr   = 5;
+  int64         parking_fee_idr   = 6;
+  int64         overnight_fee_idr = 7;
+  int64         total_idr         = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// ── RetryPayment ─────────────────────────────────────────────────────────────
+
+message RetryPaymentRequest {
+  string invoice_id = 1; // UUID
+  string driver_id  = 2; // UUID — validated against invoice owner
+}
+
+message RetryPaymentResponse {
+  string payment_id  = 1; // UUID
+  string qr_code_url = 2; // Fresh QRIS code for retry attempt
+}

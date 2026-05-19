@@ -17,7 +17,7 @@
 
 ### Billing & Pricing
 10. First hour of parking costs 5,000 IDR; each subsequent started hour costs 5,000 IDR
-11. If the parking session crosses midnight, a flat overnight fee of 20,000 IDR is charged
+11. If the parking session crosses midnight, an overnight fee of 20,000 IDR is charged per midnight crossed
 12. No overstay penalty; additional time beyond reservation window is billed at the standard hourly rate
 13. Billing is calculated from actual session duration, not locked at booking time
 14. Driver can view the invoice after check-out
@@ -29,6 +29,10 @@
 
 ### Assumptions
 - The 5,000 IDR mentioned on reservation expiry refers to the booking fee already paid at confirmation — it is non-refundable. No additional charge is applied when a reservation expires without check-in.
+- The overnight fee of 20,000 IDR is charged **per midnight crossed**, not as a one-time flat fee for the entire stay. The spec states "flat 20,000 IDR" in the context of a single overnight example; we interpret this as the unit cost per night, consistent with the "no overstay penalty, same hourly rate" principle. A 3-day stay crossing 3 midnights is charged 3 × 20,000 = 60,000 IDR in overnight fees.
+- Pricing constants (booking fee, hourly rate, overnight fee) are defined as compile-time constants in the pricing engine. In production these would be sourced from a configurable store (e.g. a `pricing_config` DB table), but are hardcoded here per the fixed values stated in the assessment spec.
+- The Notification Service is implemented as a stub that logs events to stdout. In production it would dispatch push notifications, SMS, or email. The event contract (NATS subjects and payloads) is fully defined and production-ready.
+- Driver authentication and authorization are assumed to be handled by the API Gateway. Services trust the `driver_id` passed in requests without re-validating identity.
 
 
 ## Non-Functional Requirements

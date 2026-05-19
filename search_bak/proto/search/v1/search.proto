@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package search.v1;
+
+option go_package = "parkir-pintar/services/search/gen/search/v1;searchv1";
+
+enum VehicleType {
+  VEHICLE_TYPE_UNSPECIFIED = 0;
+  VEHICLE_TYPE_CAR         = 1;
+  VEHICLE_TYPE_MOTORCYCLE  = 2;
+}
+
+enum SpotStatus {
+  SPOT_STATUS_UNSPECIFIED = 0;
+  SPOT_STATUS_AVAILABLE   = 1;
+  SPOT_STATUS_LOCKED      = 2;
+}
+
+service SearchService {
+  rpc GetAvailability (GetAvailabilityRequest) returns (GetAvailabilityResponse);
+  rpc ListSpots       (ListSpotsRequest)       returns (ListSpotsResponse);
+}
+
+// ── GetAvailability ──────────────────────────────────────────────────────────
+
+message GetAvailabilityRequest {
+  VehicleType vehicle_type = 1;
+}
+
+message GetAvailabilityResponse {
+  int32                    total_available = 1;
+  repeated FloorAvailability floors        = 2;
+}
+
+message FloorAvailability {
+  int32       floor_number    = 1;
+  int32       available_spots = 2;
+  VehicleType vehicle_type    = 3;
+}
+
+// ── ListSpots ────────────────────────────────────────────────────────────────
+
+message ListSpotsRequest {
+  int32       floor_number = 1;
+  VehicleType vehicle_type = 2;
+}
+
+message ListSpotsResponse {
+  repeated Spot spots = 1;
+}
+
+message Spot {
+  string      spot_id      = 1;
+  int32       floor_number = 2;
+  string      spot_code    = 3;
+  VehicleType vehicle_type = 4;
+  SpotStatus  status       = 5;
+}

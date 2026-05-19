@@ -56,10 +56,101 @@ services:
     ports:
       - "8081:8081"
     env_file:
-      - ./reservation/.env
+      - ./reservation/.env.docker
     depends_on:
       - postgres
       - redis
+      - nats
+    restart: always
+    networks:
+      - local
+
+  search-service:
+    container_name: parkir_search
+    build:
+      context: ./search
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8082"
+    env_file:
+      - ./search/.env.docker
+    depends_on:
+      - postgres
+    restart: always
+    networks:
+      - local
+
+  presence-service:
+    container_name: parkir_presence
+    build:
+      context: ./presence
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8085"
+    env_file:
+      - ./presence/.env.docker
+    depends_on:
+      - postgres
+    restart: always
+    networks:
+      - local
+
+  billing-service:
+    container_name: parkir_billing
+    build:
+      context: ./billing
+      dockerfile: Dockerfile
+    ports:
+      - "8084:8084"
+    env_file:
+      - ./billing/.env.docker
+    depends_on:
+      - postgres
+      - nats
+    restart: always
+    networks:
+      - local
+
+  payment-service:
+    container_name: parkir_payment
+    build:
+      context: ./payment
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
+      - "8087:8087"
+    env_file:
+      - ./payment/.env.docker
+    depends_on:
+      - postgres
+      - nats
+    restart: always
+    networks:
+      - local
+
+  payment-gateway:
+    container_name: parkir_payment_gateway
+    build:
+      context: ./stubs/payment-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8088:8088"
+    env_file:
+      - ./stubs/payment-gateway/.env.docker
+    depends_on:
+      - payment-service
+    restart: always
+    networks:
+      - local
+
+  notification-service:
+    container_name: parkir_notification
+    build:
+      context: ./stubs/notification
+      dockerfile: Dockerfile
+    env_file:
+      - ./stubs/notification/.env.docker
+    depends_on:
       - nats
     restart: always
     networks:

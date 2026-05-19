@@ -76,7 +76,7 @@ message Spot {
   int32 floor_number = 2;
   string spot_code = 3;          // e.g. "A1", "B12"
   VehicleType vehicle_type = 4;
-  SpotStatus status = 5;         // AVAILABLE | LOCKED | OCCUPIED
+  SpotStatus status = 5;         // AVAILABLE | LOCKED
 }
 ```
 
@@ -317,11 +317,9 @@ Client → Gateway → ReservationService.CreateReservation
     If SUCCESS:
       a. Update reservation status → CONFIRMED
       b. Set expires_at = now() + 1 hour
-      c. Publish reservation.confirmed → NATS (for notification)
     If FAILED:
       a. Update reservation status → CANCELLED
       b. Update spot status → AVAILABLE
-      c. Publish reservation.cancelled → NATS (for notification)
 ```
 
 ### Presence Service — CheckIn Flow
@@ -395,9 +393,11 @@ Rules:
 1. duration = checked_out_at - checked_in_at
 2. hours = ceil(duration.Minutes() / 60)   // each started hour counts
 3. parking_fee = hours * 5000
-4. overnight_fee = 0
-   if session crosses midnight (00:00):
-     overnight_fee = 20000
+4. overnight_fee = 20000 * number of midnights crossed
+   Assumption: the spec states "flat 20,000 IDR" in a single-night example.
+   We interpret this as 20,000 IDR per midnight crossed — consistent with the
+   "no overstay penalty, same hourly rate" principle. A 3-day stay crossing
+   3 midnights is charged 3 × 20,000 = 60,000 IDR overnight fee.
 5. total = booking_fee(5000) + parking_fee + overnight_fee
 ```
 
@@ -414,7 +414,7 @@ spots (
   floor_number   INT NOT NULL,          -- 1..5
   spot_code      VARCHAR(10) NOT NULL,  -- e.g. "A1"
   vehicle_type   SMALLINT NOT NULL,     -- 1=CAR, 2=MOTORCYCLE
-  status         SMALLINT NOT NULL      -- 1=AVAILABLE, 2=LOCKED, 3=OCCUPIED
+  status         SMALLINT NOT NULL      -- 1=AVAILABLE, 2=LOCKED
 )
 
 -- Reservations
@@ -455,6 +455,7 @@ invoices (
   parking_fee_idr   BIGINT NOT NULL,
   overnight_fee_idr BIGINT NOT NULL DEFAULT 0,
   total_idr         BIGINT NOT NULL,
+  qr_code_url       TEXT NOT NULL DEFAULT '',  -- stored at creation for idempotency replay
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 )
 
@@ -483,12 +484,11 @@ lock:spot:{spot_id}  →  driver_id   -- spot_id is UUID
 ### Message Queue — NATS JetStream Subjects
 
 ```
-reservation.confirmed     →  Notification Service (send confirmation to Driver)
 reservation.expired       →  Notification Service (send expiry alert to Driver)
-payment.booking.done      →  Reservation Service (confirm reservation on payment success/failure)
-payment.parking.done      →  Billing Service (mark invoice paid on payment success/failure)
 payment.booking.done      →  Notification Service (send booking payment receipt/failure to Driver)
+                          →  Reservation Service (confirm reservation on payment success/failure)
 payment.parking.done      →  Notification Service (send parking payment receipt/failure to Driver)
+                          →  Billing Service (mark invoice paid on payment success/failure)
 ```
 
 ---

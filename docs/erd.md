@@ -12,8 +12,7 @@
 │     vehicle_type   ENUM         │
 │                   (CAR|MOTORCYCLE)
 │     status         ENUM         │
-│          (AVAILABLE|LOCKED|     │
-│           OCCUPIED)             │
+│          (AVAILABLE|LOCKED)     │
 └──────────────┬──────────────────┘
                │ 1
                │ a spot can have many reservations
@@ -108,7 +107,7 @@
 Represents a single physical parking spot in the building.
 - 150 car spots (5 floors × 30)
 - 250 motorcycle spots (5 floors × 50)
-- Status transitions: `AVAILABLE → LOCKED → OCCUPIED → AVAILABLE`
+- Status transitions: `AVAILABLE → LOCKED → AVAILABLE`
 
 **Relationships:**
 - One spot can have many reservations over time (but only one active at a time)

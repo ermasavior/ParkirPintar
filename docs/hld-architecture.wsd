@@ -27,7 +27,7 @@ database "PostgreSQL\n- spots\n- reservations\n- sessions\n- invoices\n- payment
 
 database "Redis\n- Spot locks\n  (TTL: 30s)" as Redis #LightGray
 
-queue "NATS JetStream\n- reservation.confirmed\n- reservation.expired\n- payment.booking.done\n- payment.parking.done" as NATS #LightGray
+queue "NATS JetStream\n- reservation.expired\n- payment.booking.done\n- payment.parking.done" as NATS #LightGray
 
 rectangle "Payment Gateway\n[External / QRIS]" as PGW #Pink
 

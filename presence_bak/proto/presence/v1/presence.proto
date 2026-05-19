@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package presence.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "parkir-pintar/services/presence/gen/presence/v1;presencev1";
+
+enum SessionStatus {
+  SESSION_STATUS_UNSPECIFIED = 0;
+  SESSION_STATUS_ACTIVE      = 1;
+  SESSION_STATUS_COMPLETED   = 2;
+}
+
+service PresenceService {
+  rpc CheckIn    (CheckInRequest)    returns (CheckInResponse);
+  rpc CheckOut   (CheckOutRequest)   returns (CheckOutResponse);
+  rpc GetSession (GetSessionRequest) returns (GetSessionResponse);
+}
+
+// ── CheckIn ──────────────────────────────────────────────────────────────────
+
+message CheckInRequest {
+  string                    reservation_id = 1; // UUID
+  string                    driver_id      = 2; // UUID
+  google.protobuf.Timestamp checked_in_at  = 3;
+}
+
+message CheckInResponse {
+  string                    session_id    = 1; // UUID
+  google.protobuf.Timestamp checked_in_at = 2;
+  SessionStatus             status        = 3; // ACTIVE
+}
+
+// ── CheckOut ─────────────────────────────────────────────────────────────────
+
+message CheckOutRequest {
+  string                    session_id     = 1; // UUID
+  string                    driver_id      = 2; // UUID
+  google.protobuf.Timestamp checked_out_at = 3;
+}
+
+message CheckOutResponse {
+  string                    session_id     = 1; // UUID
+  string                    invoice_id     = 2; // UUID
+  google.protobuf.Timestamp checked_out_at = 3;
+  SessionStatus             status         = 4; // COMPLETED
+  int64                     total_idr      = 5; // Total parking fee due
+  string                    qr_code_url    = 6; // QRIS code URL for parking fee payment
+}
+
+// ── GetSession ───────────────────────────────────────────────────────────────
+
+message GetSessionRequest {
+  string session_id = 1; // UUID
+}
+
+message GetSessionResponse {
+  string                    session_id     = 1;
+  string                    reservation_id = 2;
+  string                    driver_id      = 3;
+  string                    spot_id        = 4;
+  SessionStatus             status         = 5;
+  google.protobuf.Timestamp checked_in_at  = 6;
+  google.protobuf.Timestamp checked_out_at = 7; // optional — only set when COMPLETED
+}
