@@ -1,6 +1,8 @@
 # ParkirPintar
 
-A smart parking system backend built as a Go microservices. Drivers can search for available spots, reserve them, check in/out, and pay via QRIS.
+ParkirPintar is a backend system for a smart parking area, built as a Go microservices. It handles the full driver journey — searching for available spots, reserving one, checking in and out, and paying via QRIS — across five independent services communicating over gRPC and NATS JetStream.
+
+The system is designed around two core principles: no double-booking and idempotent operations (all writes accept a UUID idempotency key).
 
 ### CI/CD Status
 
