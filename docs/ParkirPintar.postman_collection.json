@@ -2,20 +2,20 @@
   "info": {
     "name": "ParkirPintar",
     "_postman_id": "parkir-pintar-collection",
-    "description": "gRPC API collection for ParkirPintar smart parking backend. All services communicate via gRPC over HTTP/2 through the API Gateway.\n\n**Base URL**: `{{gateway_host}}` (default: `localhost:8080`)\n\n**Auth**: Set `authorization` metadata header with Bearer token on all requests.\n\n**Enums**:\n- VehicleType: `CAR=1`, `MOTORCYCLE=2`\n- AssignmentMode: `SYSTEM_ASSIGNED=1`, `USER_SELECTED=2`\n- SpotStatus: `AVAILABLE=1`, `LOCKED=2`\n- ReservationStatus: `PENDING_PAYMENT=0`, `CONFIRMED=1`, `EXPIRED=2`, `CHECKED_IN=3`, `COMPLETED=4`, `CANCELLED=5`\n- SessionStatus: `ACTIVE=0`, `COMPLETED=1`\n- PaymentType: `BOOKING_FEE=0`, `PARKING_FEE=1`\n- PaymentStatus: `PENDING=0`, `SUCCESS=1`, `FAILED=2`, `EXPIRED=3`",
+    "description": "gRPC API collection for ParkirPintar smart parking backend. All services communicate via gRPC over HTTP/2 through the API Gateway.\n\n**Base URL**: `{{gateway_host}}` (default: `localhost:8080`)\n\n**Auth**: Set `authorization` metadata header with Bearer token on all requests.\n\n**Enums** (proto3 — 0 is always UNSPECIFIED/default):\n- VehicleType: `UNSPECIFIED=0`, `CAR=1`, `MOTORCYCLE=2`\n- AssignmentMode: `UNSPECIFIED=0`, `SYSTEM_ASSIGNED=1`, `USER_SELECTED=2`\n- SpotStatus: `UNSPECIFIED=0`, `AVAILABLE=1`, `LOCKED=2`\n- ReservationStatus: `UNSPECIFIED=0`, `PENDING_PAYMENT=1`, `CONFIRMED=2`, `EXPIRED=3`, `CHECKED_IN=4`, `COMPLETED=5`, `CANCELLED=6`\n- SessionStatus: `UNSPECIFIED=0`, `ACTIVE=1`, `COMPLETED=2`\n- PaymentType: `UNSPECIFIED=0`, `BOOKING_FEE=1`, `PARKING_FEE=2`\n- PaymentMethod: `UNSPECIFIED=0`, `QRIS=1`\n- PaymentStatus: `UNSPECIFIED=0`, `PENDING=1`, `SUCCESS=2`, `FAILED=3`, `EXPIRED=4`\n- InvoiceStatus: `UNSPECIFIED=0`, `PENDING_PAYMENT=1`, `PAID=2`, `PAYMENT_FAILED=3`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "gateway_host", "value": "localhost:8080", "type": "string" },
     { "key": "payment_service_host", "value": "localhost:8087", "type": "string" },
-    { "key": "webhook_secret", "value": "change-me-in-production", "type": "string" },
+    { "key": "webhook_secret", "value": "your-webhook-secret", "type": "string" },
     { "key": "webhook_signature", "value": "", "type": "string" },
     { "key": "driver_id", "value": "550e8400-e29b-41d4-a716-446655440000", "type": "string" },
-    { "key": "reservation_id", "value": "1", "type": "string" },
-    { "key": "spot_id", "value": "42", "type": "string" },
-    { "key": "session_id", "value": "1", "type": "string" },
-    { "key": "invoice_id", "value": "1", "type": "string" },
-    { "key": "payment_id", "value": "1", "type": "string" }
+    { "key": "reservation_id", "value": "550e8400-e29b-41d4-a716-446655440001", "type": "string" },
+    { "key": "spot_id", "value": "550e8400-e29b-41d4-a716-446655440002", "type": "string" },
+    { "key": "session_id", "value": "550e8400-e29b-41d4-a716-446655440003", "type": "string" },
+    { "key": "invoice_id", "value": "550e8400-e29b-41d4-a716-446655440004", "type": "string" },
+    { "key": "payment_id", "value": "550e8400-e29b-41d4-a716-446655440005", "type": "string" }
   ],
   "item": [
     {
@@ -53,7 +53,7 @@
               "raw": "{\n  \"floor_number\": 1,\n  \"vehicle_type\": 1\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Lists individual spots on a specific floor filtered by vehicle type.\n\n**Spot status**: `AVAILABLE=1`, `LOCKED=2`\n\n**Response fields**:\n- `spots[].spot_id`: spot identifier\n- `spots[].floor_number`: floor number\n- `spots[].spot_code`: human-readable code e.g. `A1`, `B12`\n- `spots[].vehicle_type`: vehicle type\n- `spots[].status`: current spot status"
+            "description": "Lists individual spots on a specific floor filtered by vehicle type.\n\n**Spot status**: `AVAILABLE=1`, `LOCKED=2`\n\n**Response fields**:\n- `spots[].spot_id`: spot UUID\n- `spots[].floor_number`: floor number\n- `spots[].spot_code`: human-readable code e.g. `A1`, `B12`\n- `spots[].vehicle_type`: vehicle type\n- `spots[].status`: current spot status"
           }
         }
       ]
@@ -93,7 +93,7 @@
               "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"vehicle_type\": 1,\n  \"mode\": 2,\n  \"spot_id\": \"{{spot_id}}\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Creates a reservation for a specific driver-selected spot.\n\n**mode**: `2=USER_SELECTED` — spot_id is required.\n\n**spot_id**: Must be an AVAILABLE spot. System acquires Redis lock then verifies DB status.\n\n**Conflict**: If spot is already locked, returns error immediately — no waitlist."
+            "description": "Creates a reservation for a specific driver-selected spot.\n\n**mode**: `2=USER_SELECTED` — spot_id is required.\n\n**spot_id**: Must be an AVAILABLE spot UUID. System acquires Redis lock then verifies DB status.\n\n**Conflict**: If spot is already locked, returns error immediately — no waitlist."
           }
         },
         {
@@ -110,7 +110,7 @@
               "raw": "{\n  \"reservation_id\": \"{{reservation_id}}\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Retrieves reservation details by ID.\n\n**ReservationStatus values**:\n- `PENDING_PAYMENT=0`: awaiting booking fee payment\n- `CONFIRMED=1`: payment received, valid for check-in (expires 1 hour after confirmation)\n- `EXPIRED=2`: not checked in within 1 hour\n- `CHECKED_IN=3`: driver has checked in\n- `COMPLETED=4`: session completed and paid\n- `CANCELLED=5`: booking payment failed — system-driven only"
+            "description": "Retrieves reservation details by ID.\n\n**ReservationStatus values**:\n- `PENDING_PAYMENT=1`: awaiting booking fee payment\n- `CONFIRMED=2`: payment received, valid for check-in (expires 1 hour after confirmation)\n- `EXPIRED=3`: not checked in within 1 hour\n- `CHECKED_IN=4`: driver has checked in\n- `COMPLETED=5`: session completed and paid\n- `CANCELLED=6`: booking payment failed — system-driven only"
           }
         }
       ]
@@ -133,7 +133,7 @@
               "raw": "{\n  \"reservation_id\": \"{{reservation_id}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"checked_in_at\": \"2026-05-14T08:00:00Z\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Called by the driver's app when they tap 'Check In' upon arriving at the parking lot.\n\n**Preconditions**:\n- Reservation must be in `CONFIRMED` status\n- Reservation must not be expired (`expires_at > now()`)\n- driver_id must match reservation owner\n\n**checked_in_at**: RFC3339 timestamp. Use current time.\n\n**Response**: Returns session_id with ACTIVE status."
+            "description": "Called by the driver's app when they tap 'Check In' upon arriving at the parking lot.\n\n**Preconditions**:\n- Reservation must be in `CONFIRMED` status (value `2`)\n- Reservation must not be expired (`expires_at > now()`)\n- driver_id must match reservation owner\n\n**checked_in_at**: RFC3339 timestamp. Use current time.\n\n**Response**: Returns session_id with `ACTIVE` status (value `1`)."
           }
         },
         {
@@ -150,7 +150,7 @@
               "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"checked_out_at\": \"2026-05-14T10:30:00Z\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Called by the driver's app when they tap 'Check Out'. driver_id in the payload is validated against the auth token as a safety check.\n\n**Preconditions**:\n- Session must be ACTIVE\n- driver_id must match session owner\n\n**checked_out_at**: RFC3339 timestamp. Use current time.\n\n**Side effects**:\n- Session → COMPLETED, reservation → COMPLETED\n- Spot stays LOCKED until parking fee payment confirmed\n- Calls BillingService.CalculateAndCreateInvoice internally\n- Returns invoice_id + QRIS code URL for parking fee payment\n- Exit gate opens only after payment SUCCESS (see RetryPayment for failure handling)\n\n**Pricing**: IDR 5,000/hour (ceil) + IDR 20,000 overnight fee if session crosses midnight."
+            "description": "Called by the driver's app when they tap 'Check Out'.\n\n**Preconditions**:\n- Session must be `ACTIVE` (value `1`)\n- driver_id must match session owner\n\n**checked_out_at**: RFC3339 timestamp. Use current time.\n\n**Side effects**:\n- Session → `COMPLETED`, reservation → `COMPLETED`\n- Spot released to `AVAILABLE` immediately on checkout (before payment)\n- Calls BillingService.CalculateAndCreateInvoice internally\n- Returns invoice_id + QRIS code URL for parking fee payment\n\n**Pricing**: `parking_fee = ceil(duration_minutes / 60) × 5,000 IDR` + `overnight_fee = 20,000 IDR` per midnight crossed.\n\n**Note**: `total_idr` in the response is `parking_fee + overnight_fee` only — booking fee is stored separately on the invoice."
           }
         },
         {
@@ -167,7 +167,7 @@
               "raw": "{\n  \"session_id\": \"{{session_id}}\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Retrieves parking session details by session ID.\n\n**SessionStatus**: `ACTIVE=0`, `COMPLETED=1`"
+            "description": "Retrieves parking session details by session ID.\n\n**SessionStatus**: `ACTIVE=1`, `COMPLETED=2`\n\n**checked_out_at** is only set when status is `COMPLETED`."
           }
         }
       ]
@@ -190,7 +190,7 @@
               "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"session_id\": \"{{session_id}}\",\n  \"reservation_id\": \"{{reservation_id}}\",\n  \"driver_id\": \"{{driver_id}}\",\n  \"checked_in_at\": \"2026-05-14T08:00:00Z\",\n  \"checked_out_at\": \"2026-05-14T10:30:00Z\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Calculates parking fee and creates an invoice. Idempotent — duplicate calls with same idempotency_key return the existing invoice.\n\n**Pricing rules**:\n- `parking_fee = ceil(duration_minutes / 60) * 5000`\n- `overnight_fee = 20000` if session crosses midnight (00:00), else `0`\n- `total = booking_fee(5000) + parking_fee + overnight_fee`\n\n**Example** (08:00 → 10:30 = 3 hours):\n- parking_fee = 3 * 5000 = 15,000\n- overnight_fee = 0\n- total = 5,000 + 15,000 = 20,000 IDR\n\n**Note**: Normally called internally by Presence Service, not directly by clients."
+            "description": "Calculates parking fee and creates an invoice. Idempotent — duplicate calls with same idempotency_key return the existing invoice.\n\n**Pricing rules**:\n- `parking_fee = ceil(duration_minutes / 60) × 5,000 IDR`\n- `overnight_fee = 20,000 IDR × number of midnights crossed` (else `0`)\n- `total_idr = parking_fee + overnight_fee` (booking fee is stored separately, NOT included in total)\n\n**Example** (08:00 → 10:30 = 3 started hours):\n- parking_fee = 3 × 5,000 = 15,000 IDR\n- overnight_fee = 0\n- total_idr = 15,000 IDR\n- booking_fee_idr = 5,000 IDR (stored on invoice, charged at reservation time)\n\n**Note**: Normally called internally by Presence Service, not directly by clients."
           }
         },
         {
@@ -207,7 +207,7 @@
               "raw": "{\n  \"invoice_id\": \"{{invoice_id}}\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Retrieves invoice details by ID.\n\n**InvoiceStatus**: `PENDING_PAYMENT=1`, `PAID=2`, `PAYMENT_FAILED=3`\n\n**Response fields**:\n- `booking_fee_idr`: always 5,000\n- `parking_fee_idr`: calculated from session duration\n- `overnight_fee_idr`: 20,000 if overnight, else 0\n- `total_idr`: sum of all fees"
+            "description": "Retrieves invoice details by ID.\n\n**InvoiceStatus**: `PENDING_PAYMENT=1`, `PAID=2`, `PAYMENT_FAILED=3`\n\n**Response fields**:\n- `booking_fee_idr`: always 5,000 IDR (charged at reservation time)\n- `parking_fee_idr`: calculated from session duration\n- `overnight_fee_idr`: 20,000 IDR per midnight crossed, else 0\n- `total_idr`: `parking_fee_idr + overnight_fee_idr` (does NOT include booking_fee_idr)"
           }
         },
         {
@@ -224,7 +224,7 @@
               "raw": "{\n  \"invoice_id\": \"{{invoice_id}}\",\n  \"driver_id\": \"{{driver_id}}\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Generates a fresh QRIS code for a failed or expired parking fee payment. Called by the driver when the exit gate is still closed after payment failure.\n\n**Preconditions**:\n- Invoice must be in `PAYMENT_FAILED` status\n- driver_id must match invoice owner\n\n**Side effects**:\n- Invoice status reset to `PENDING_PAYMENT`\n- New payment record created (previous FAILED/EXPIRED record preserved for audit)\n- Returns new `qr_code_url`\n\n**Note**: Gate remains closed until the new payment succeeds via webhook."
+            "description": "Generates a fresh QRIS code for a failed or expired parking fee payment.\n\n**Preconditions**:\n- Invoice must be in `PAYMENT_FAILED` status (value `3`)\n- driver_id must match invoice owner\n\n**Side effects**:\n- Invoice status reset to `PENDING_PAYMENT` (value `1`)\n- New payment record created (previous FAILED/EXPIRED record preserved for audit)\n- Returns new `payment_id` and `qr_code_url`"
           }
         }
       ]
@@ -244,10 +244,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"reference_id\": \"{{reservation_id}}\",\n  \"payment_type\": 0,\n  \"amount_idr\": 5000,\n  \"driver_id\": \"{{driver_id}}\",\n  \"method\": 1\n}",
+              "raw": "{\n  \"idempotency_key\": \"{{$randomUUID}}\",\n  \"reference_id\": \"{{reservation_id}}\",\n  \"payment_type\": 1,\n  \"amount_idr\": 5000,\n  \"driver_id\": \"{{driver_id}}\",\n  \"method\": 1\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Creates a QRIS payment and returns the QR code URL immediately. Payment result is async via webhook.\n\n**payment_type**: `0=BOOKING_FEE` (reservation), `1=PARKING_FEE` (invoice)\n\n**method**: `1=QRIS` (only supported method)\n\n**reference_id**: `reservation_id` for BOOKING_FEE, `invoice_id` for PARKING_FEE\n\n**amount_idr**:\n- Booking fee: always `5000`\n- Parking fee: from invoice `total_idr`\n\n**Response**: Returns `qr_code_url` with status `PENDING`. Final status delivered via NATS after webhook callback.\n\n**Note**: Normally called internally by Reservation and Billing services."
+            "description": "Creates a QRIS payment and returns the QR code URL immediately. Payment result is async via webhook.\n\n**payment_type**: `1=BOOKING_FEE` (reference_id = reservation_id), `2=PARKING_FEE` (reference_id = invoice_id)\n\n**method**: `1=QRIS` (only supported method)\n\n**amount_idr**:\n- Booking fee: always `5000`\n- Parking fee: use `total_idr` from the invoice\n\n**Response**: Returns `payment_id`, `qr_code_url`, status `PENDING` (value `1`). Final status delivered via NATS after webhook callback.\n\n**Note**: Normally called internally by Reservation and Billing services."
           }
         },
         {
@@ -264,7 +264,7 @@
               "raw": "{\n  \"payment_id\": \"{{payment_id}}\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Polls payment status by payment ID.\n\n**PaymentStatus**: `PENDING=0`, `SUCCESS=1`, `FAILED=2`, `EXPIRED=3`\n\n**Note**: Prefer listening to NATS events over polling this endpoint in production."
+            "description": "Polls payment status by payment ID.\n\n**PaymentStatus**: `PENDING=1`, `SUCCESS=2`, `FAILED=3`, `EXPIRED=4`\n\n**Note**: Prefer listening to NATS events over polling this endpoint in production."
           }
         },
         {
@@ -275,10 +275,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Compute HMAC-SHA256 signature for X-Webhook-Signature header",
-                  "// Uses the webhook_secret collection variable (default: change-me-in-production)",
+                  "// Compute HMAC-SHA256 signature for X-Webhook-Signature header.",
+                  "// Uses the webhook_secret collection variable (default: your-webhook-secret).",
+                  "// Must match WEBHOOK_SECRET in payment-service .env.",
                   "",
-                  "const secret = pm.collectionVariables.get('webhook_secret') || 'change-me-in-production';",
+                  "const secret = pm.collectionVariables.get('webhook_secret') || 'your-webhook-secret';",
                   "const body = pm.request.body.raw;",
                   "",
                   "const signature = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
@@ -301,7 +302,7 @@
               "raw": "{\n  \"gateway_ref\": \"GW-REF-123456\",\n  \"reference_id\": \"{{reservation_id}}\",\n  \"payment_type\": \"BOOKING_FEE\",\n  \"status\": \"SUCCESS\",\n  \"amount_idr\": 5000,\n  \"paid_at\": \"2026-05-14T08:05:00Z\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "**Inbound HTTP webhook from external payment gateway** — not a client-facing endpoint.\n\nCalled by the payment gateway after the driver completes QRIS payment.\n\n**Pre-request script** automatically computes the HMAC-SHA256 signature from the request body using `webhook_secret` collection variable and sets `webhook_signature`.\n\n**On SUCCESS**:\n- `payment_type=BOOKING_FEE` → publishes `payment.booking.done` to NATS → Reservation Service confirms reservation\n- `payment_type=PARKING_FEE` → publishes `payment.parking.done` to NATS → Billing Service marks invoice PAID\n\n**On FAILED/EXPIRED**:\n- Same NATS events published with failure status\n- Reservation Service cancels reservation and releases spot\n\n**Note**: This endpoint is on the Payment Service directly, not through the API Gateway. Signature verification should be implemented."
+            "description": "**Inbound HTTP webhook from external payment gateway** — not a client-facing endpoint.\n\nCalled by the payment gateway after the driver completes QRIS payment. The pre-request script automatically computes the HMAC-SHA256 signature and sets `webhook_signature`.\n\n**payment_type** (string in webhook payload): `\"BOOKING_FEE\"` or `\"PARKING_FEE\"`\n\n**status** (string in webhook payload): `\"SUCCESS\"`, `\"FAILED\"`, or `\"EXPIRED\"`\n\n**On SUCCESS**:\n- `BOOKING_FEE` → publishes `payment.booking.done` → Reservation Service sets status to `CONFIRMED`\n- `PARKING_FEE` → publishes `payment.parking.done` → Billing Service sets invoice to `PAID`\n\n**On FAILED/EXPIRED**:\n- `BOOKING_FEE` → Reservation Service sets status to `CANCELLED`, releases spot\n- `PARKING_FEE` → Billing Service sets invoice to `PAYMENT_FAILED`\n\n**Note**: This endpoint is on the Payment Service directly (port 8087), not through the API Gateway. Requests with invalid HMAC signatures are rejected with 401."
           }
         }
       ]

@@ -1,43 +1,5 @@
 # ParkirPintar — Low Level Design
 
-## Directory Structure
-
-```
-parkir-pintar/
-├── proto/                          # Shared protobuf definitions
-│   ├── search/v1/search.proto
-│   ├── reservation/v1/reservation.proto
-│   ├── presence/v1/presence.proto
-│   ├── billing/v1/billing.proto
-│   ├── payment/v1/payment.proto
-│   └── notification/v1/notification.proto
-├── services/
-│   ├── gateway/                    # API Gateway
-│   ├── search/                     # Search Service
-│   ├── reservation/                # Reservation Service
-│   ├── presence/                   # Presence Service
-│   ├── billing/                    # Billing Service
-│   ├── payment/                    # Payment Service
-│   └── notification/               # Notification Service
-├── pkg/                            # Shared reusable components
-│   ├── pricing/                    # Pricing engine
-│   ├── lock/                       # Distributed locking
-│   ├── config/                     # Config loader
-│   ├── logger/                     # Structured logging
-│   └── tracer/                     # Distributed tracing
-├── infra/                          # Infrastructure configs
-│   ├── postgres/
-│   ├── redis/
-│   ├── nats/
-│   └── k8s/
-└── tests/
-    ├── unit/
-    ├── integration/
-    └── e2e/
-```
-
----
-
 ## gRPC API Contracts
 
 ### Search Service

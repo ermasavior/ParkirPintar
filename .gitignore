@@ -30,6 +30,8 @@ go.work.sum
 .env
 .env.local
 .env.docker
+.env.e2e
+.env.empty
 .env.*.local
 
 # Log files
@@ -59,3 +61,5 @@ assets/private.pem
 .agent/
 .amazonq/
 .sop/
+
+*Zone.Identifier

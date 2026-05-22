@@ -16,11 +16,15 @@ import (
 
 // Notification subjects consumed by this stub service.
 // In production each would trigger a push/SMS/email to the driver.
-var subjects = []string{
-	"reservation.expired",
+//
+// payment.booking.done and payment.parking.done are JetStream subjects (durable).
+// reservation.expired is a core NATS subject (plain subscribe).
+var jetStreamSubjects = []string{
 	"payment.booking.done",
 	"payment.parking.done",
 }
+
+const coreSubjectReservationExpired = "reservation.expired"
 
 func main() {
 	dotenv.LoadEnv()
@@ -47,11 +51,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	for _, subj := range subjects {
-		subj := subj // capture loop variable
+	// Ensure streams exist — idempotent, safe to call even if already created
+	// by billing or reservation service consumers.
+	streams := map[string][]string{
+		"PAYMENTS": {"payment.booking.done", "payment.parking.done"},
+	}
+	for streamName, streamSubjects := range streams {
+		_, err := js.AddStream(&nats.StreamConfig{
+			Name:     streamName,
+			Subjects: streamSubjects,
+		})
+		if err != nil && err != nats.ErrStreamNameAlreadyInUse {
+			logger.Error(ctx, "failed to ensure stream",
+				slog.String("stream", streamName),
+				slog.String("error", err.Error()),
+			)
+		}
+	}
 
-		// Durable name is derived from the subject so NATS persists consumer
-		// state across restarts. On resume it delivers only new messages.
+	// Subscribe to JetStream subjects (durable — persists consumer state across restarts)
+	for _, subj := range jetStreamSubjects {
+		subj := subj
 		durableName := "notification-stub-" + strings.ReplaceAll(subj, ".", "-")
 
 		_, err := js.Subscribe(subj, func(msg *nats.Msg) {
@@ -59,21 +79,37 @@ func main() {
 				slog.String("subject", msg.Subject),
 				slog.String("payload", string(msg.Data)),
 			)
-			// In production: dispatch push notification / SMS / email here.
 			msg.Ack()
 		}, nats.Durable(durableName), nats.DeliverNew())
 		if err != nil {
-			// Non-fatal: log and continue — stream may not exist yet on first boot
-			logger.Error(ctx, "failed to subscribe",
+			logger.Error(ctx, "failed to subscribe to JetStream subject",
 				slog.String("subject", subj),
 				slog.String("error", err.Error()),
 			)
 		} else {
-			logger.Info(ctx, "subscribed to subject",
+			logger.Info(ctx, "subscribed to JetStream subject",
 				slog.String("subject", subj),
 				slog.String("durable", durableName),
 			)
 		}
+	}
+
+	// Subscribe to core NATS subject (reservation.expired — published via nc.Publish)
+	_, err = nc.Subscribe(coreSubjectReservationExpired, func(msg *nats.Msg) {
+		logger.Info(ctx, "[NOTIFICATION STUB] event received",
+			slog.String("subject", msg.Subject),
+			slog.String("payload", string(msg.Data)),
+		)
+	})
+	if err != nil {
+		logger.Error(ctx, "failed to subscribe to core NATS subject",
+			slog.String("subject", coreSubjectReservationExpired),
+			slog.String("error", err.Error()),
+		)
+	} else {
+		logger.Info(ctx, "subscribed to core NATS subject",
+			slog.String("subject", coreSubjectReservationExpired),
+		)
 	}
 
 	logger.Info(ctx, "notification stub running — waiting for events...")

@@ -1,0 +1,176 @@
+services:
+  postgres:
+    image: postgres:alpine3.20
+    command: postgres -c 'max_connections=500'
+    environment:
+      POSTGRES_DB: parkir_pintar
+      POSTGRES_USER: parkir
+      POSTGRES_PASSWORD: parkir
+    ports:
+      - "5432"
+    networks:
+      - e2e
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parkir -d parkir_pintar"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    image: redis:alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379"
+    networks:
+      - e2e
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+
+  nats:
+    image: nats:alpine
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222"
+    networks:
+      - e2e
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 3s
+
+  migrate:
+    image: postgres:alpine3.20
+    # Runs every *.up.sql migration in order then exits (code 0).
+    # Application services depend on this completing successfully so the
+    # schema and seed data are always present before any service starts.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for f in $(ls /migrations/*.up.sql | sort); do
+          echo "→ $$f"
+          psql "$$POSTGRES_DSN" -f "$$f"
+        done
+        echo "Migrations complete."
+    environment:
+      POSTGRES_DSN: postgres://parkir:parkir@postgres:5432/parkir_pintar?sslmode=disable
+    volumes:
+      - ./db/migrations:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - e2e
+
+  reservation-service:
+    image: parkir-pintar/reservation:latest
+    ports:
+      - "8082"
+    env_file:
+      - ./reservation/.env.e2e
+    volumes:
+      - ./.env.empty:/app/.env:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - e2e
+
+  search-service:
+    image: parkir-pintar/search:latest
+    ports:
+      - "8083"
+    env_file:
+      - ./search/.env.e2e
+    volumes:
+      - ./.env.empty:/app/.env:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - e2e
+
+  presence-service:
+    image: parkir-pintar/presence:latest
+    ports:
+      - "8085"
+    env_file:
+      - ./presence/.env.e2e
+    volumes:
+      - ./.env.empty:/app/.env:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - e2e
+
+  billing-service:
+    image: parkir-pintar/billing:latest
+    ports:
+      - "8084"
+    env_file:
+      - ./billing/.env.e2e
+    volumes:
+      - ./.env.empty:/app/.env:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    networks:
+      - e2e
+
+  payment-service:
+    image: parkir-pintar/payment:latest
+    ports:
+      - "8086"
+      - "8087"
+    env_file:
+      - ./payment/.env.e2e
+    volumes:
+      - ./.env.empty:/app/.env:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    networks:
+      - e2e
+
+  payment-gateway:
+    image: parkir-pintar/payment-gateway:latest
+    ports:
+      - "8088"
+    env_file:
+      - ./stubs/payment-gateway/.env.e2e
+    volumes:
+      - ./.env.empty:/app/.env:ro
+    depends_on:
+      - payment-service
+    networks:
+      - e2e
+
+  notification-service:
+    image: parkir-pintar/notification:latest
+    env_file:
+      - ./stubs/notification/.env.e2e
+    volumes:
+      - ./.env.empty:/app/.env:ro
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - e2e
+
+networks:
+  e2e:

@@ -33,3 +33,22 @@ migrate-docker:
 ## db-shell: open a psql shell to the docker postgres container
 db-shell:
 	docker exec -it parkir_postgres psql -U parkir -d parkir_pintar
+
+.PHONY: build-e2e test-e2e
+
+## build-e2e: build all service Docker images required for E2E tests
+build-e2e:
+	@echo "Building service images..."
+	docker build --network=host -t parkir-pintar/reservation:latest ./reservation
+	docker build --network=host -t parkir-pintar/billing:latest ./billing
+	docker build --network=host -t parkir-pintar/payment:latest ./payment
+	docker build --network=host -t parkir-pintar/presence:latest ./presence
+	docker build --network=host -t parkir-pintar/search:latest ./search
+	docker build --network=host -t parkir-pintar/payment-gateway:latest ./stubs/payment-gateway
+	docker build --network=host -t parkir-pintar/notification:latest ./stubs/notification
+	@echo "Done."
+
+## test-e2e: run E2E tests
+test-e2e:
+	@echo "Running E2E tests..."
+	cd e2e && go test -tags=e2e -timeout 300s -v ./...

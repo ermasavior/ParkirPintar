@@ -54,7 +54,7 @@ services:
       context: ./reservation
       dockerfile: Dockerfile
     ports:
-      - "8081:8081"
+      - "8082:8082"
     env_file:
       - ./reservation/.env.docker
     depends_on:
@@ -71,7 +71,7 @@ services:
       context: ./search
       dockerfile: Dockerfile
     ports:
-      - "8083:8082"
+      - "8083:8083"
     env_file:
       - ./search/.env.docker
     depends_on:
